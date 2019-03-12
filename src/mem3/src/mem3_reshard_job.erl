@@ -375,7 +375,7 @@ handle_unknown_msg(Job, When, RMsg) ->
     erlang:error({invalid_split_job_message, Job#job.id, When, RMsg}).
 
 
-initial_copy(Job) ->
+initial_copy(#job{} = Job) ->
     Pid = spawn_link(?MODULE, initial_copy_impl, [Job]),
     report(Job#job{workers = [Pid]}).
 
@@ -539,9 +539,15 @@ source_delete_impl(#job{source = #shard{name = Name}, target = Targets}) ->
                         [?MODULE, Name])
             end;
         false ->
+            % Emit deleted event even when not actually deleting the files
+            couch_event:notify(Name, deleted),
             LogMsg = "~p : according to configuration not deleting source ~p",
             couch_log:warning(LogMsg, [?MODULE, Name])
-    end.
+    end,
+    % Emit event notifying every listener about the new target shards. This should come
+    % after the `deleted` event has been sent already
+    TNames = [TName || #shard{name = TName} <- Targets],
+    lists:foreach(fun(TName) -> couch_event:notify(TName, created) end, TNames).
 
 
 completed(#job{} = Job) ->
