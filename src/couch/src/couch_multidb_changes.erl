@@ -185,7 +185,8 @@ register_with_event_server(Server) ->
 
 -spec db_callback(created | deleted | updated, binary(), #state{}) -> #state{}.
 db_callback(created, DbName, #state{mod = Mod, ctx = Ctx} = State) ->
-    State#state{ctx = Mod:db_created(DbName, Ctx)};
+    NewState = State#state{ctx = Mod:db_created(DbName, Ctx)},
+    resume_scan(DbName, NewState);
 db_callback(deleted, DbName, #state{mod = Mod, ctx = Ctx} = State) ->
     State#state{ctx = Mod:db_deleted(DbName, Ctx)};
 db_callback(updated, DbName, State) ->
