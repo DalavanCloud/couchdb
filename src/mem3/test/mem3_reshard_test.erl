@@ -56,7 +56,8 @@ mem3_reshard_db_test_() ->
                     fun update_docs_before_topoff1/1,
                     fun indices_are_built/1,
                     fun split_partitioned_db/1,
-                    fun split_twice/1
+                    fun split_twice/1,
+                    fun couch_events_are_emitted/1
                 ]
             }
         }
@@ -333,6 +334,41 @@ split_twice(#{db1 := Db}) ->
         ?assertEqual(trunc(UpdateSeq1 * 1.5), UpdateSeq2),
         ?assertEqual(Docs1, Docs2),
         ?assertEqual(without_meta_locals(Local1), without_meta_locals(Local2))
+    end).
+
+
+couch_events_are_emitted(#{db1 := Db}) ->
+    ?_test(begin
+        couch_event:register_all(self()),
+
+        % Split the one shard
+        [#shard{name=Shard}] = lists:sort(mem3:local_shards(Db)),
+        {ok, JobId} = mem3_reshard:start_split_job(Shard),
+        wait_state(JobId, completed),
+
+        % Perform some basic checks that the shard was split
+        Shards1 = lists:sort(mem3:local_shards(Db)),
+        ?assertEqual(2, length(Shards1)),
+        [#shard{range = R1}, #shard{range = R2}] = Shards1,
+        ?assertEqual([16#00000000, 16#7fffffff], R1),
+        ?assertEqual([16#80000000, 16#ffffffff], R2),
+
+        Flush = fun F(Events) ->
+            receive
+                {'$couch_event', DbName, Event} when
+                        Event =:= created orelse Event =:= deleted ->
+                    case binary:match(DbName, Db) of
+                        nomatch -> F(Events);
+                        {_, _} -> F([Event | Events])
+                    end
+            after 0 ->
+                    lists:reverse(Events)
+            end
+        end,
+
+        ?assertEqual([deleted, created, created], Flush([])),
+
+        couch_event:unregister(self())
     end).
 
 
