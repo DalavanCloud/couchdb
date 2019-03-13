@@ -447,7 +447,8 @@ t_handle_call_checkpoint_existing() ->
 
 t_handle_info_created() ->
     ?_test(begin
-        State = mock_state(),
+        Tid = mock_ets(),
+        State = mock_state(Tid),
         handle_info_check({'$couch_event', ?DBNAME, created}, State),
         ?assert(meck:validate(?MOD)),
         ?assert(meck:called(?MOD, db_created, [?DBNAME, zig]))
