@@ -64,11 +64,11 @@ defmodule ReshardBasicTest do
     assert get_state() == %{"state" => "running", "reason" => :null}
   end
 
-  test "split db1 (q=1) shards on node1", context do
-    db1 = context[:db1]
+  test "split q=1 db shards on node1 (1 job)", context do
+    db = context[:db1]
     node1 = get_node1()
 
-    resp = post_job_node(db1, node1)
+    resp = post_job_node(db, node1)
     assert resp.status_code == 201
 
     body = resp.body
@@ -106,7 +106,7 @@ defmodule ReshardBasicTest do
     assert body["job_state"] == "completed"
     assert body["split_state"] == "completed"
 
-    resp = Couch.get("/#{db1}/_shards")
+    resp = Couch.get("/#{db}/_shards")
     assert resp.status_code == 200
     shards = resp.body["shards"]
     assert node1 not in shards["00000000-ffffffff"]
@@ -127,11 +127,11 @@ defmodule ReshardBasicTest do
     assert summary["completed"] == 0
   end
 
-  test "split db2 (q=2) shards on node1", context do
-    db2 = context[:db2]
+  test "split q=2 shards on node1 (2 jobs)", context do
+    db = context[:db2]
     node1 = get_node1()
 
-    resp = post_job_node(db2, node1)
+    resp = post_job_node(db, node1)
     assert resp.status_code == 201
 
     body = resp.body
@@ -153,7 +153,7 @@ defmodule ReshardBasicTest do
     summary = get_summary()
     assert summary["completed"] == 2
 
-    resp = Couch.get("/#{db2}/_shards")
+    resp = Couch.get("/#{db}/_shards")
     assert resp.status_code == 200
     shards = resp.body["shards"]
     assert node1 not in shards["00000000-7fffffff"]
@@ -163,8 +163,11 @@ defmodule ReshardBasicTest do
     assert shards["80000000-bfffffff"] == [node1]
     assert shards["c0000000-ffffffff"] == [node1]
 
-    remove_job(id1)
-    remove_job(id2)
+    # deleting the source db should remove the jobs
+    delete_db(db)
+    wait_job_removed(id1)
+    wait_job_removed(id2)
+
     summary = get_summary()
     assert summary["total"] == 0
   end

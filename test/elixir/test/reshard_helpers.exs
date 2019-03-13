@@ -88,6 +88,10 @@ defmodule ReshardHelpers do
     node1
   end
 
+  def wait_job_removed(id) do
+    retry_until(fn -> get_job(id).status_code == 404 end, 200, 10_000)
+  end
+
   def wait_job_completed(id) do
     wait_job_state(id, "completed")
   end
