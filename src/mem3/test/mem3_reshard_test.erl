@@ -355,8 +355,8 @@ couch_events_are_emitted(#{db1 := Db}) ->
 
         Flush = fun F(Events) ->
             receive
-                {'$couch_event', DbName, Event} when
-                        Event =:= created orelse Event =:= deleted ->
+                {'$couch_event', DbName, Event} when Event =:= deleted
+                        orelse Event =:= updated ->
                     case binary:match(DbName, Db) of
                         nomatch -> F(Events);
                         {_, _} -> F([Event | Events])
@@ -365,9 +365,9 @@ couch_events_are_emitted(#{db1 := Db}) ->
                     lists:reverse(Events)
             end
         end,
-
-        ?assertEqual([deleted, created, created], Flush([])),
-
+        Events = Flush([]),
+        StartAtDeleted = lists:dropwhile(fun(E) -> E =/= deleted end, Events),
+        ?assertMatch([deleted, updated, updated | _], StartAtDeleted),
         couch_event:unregister(self())
     end).
 
