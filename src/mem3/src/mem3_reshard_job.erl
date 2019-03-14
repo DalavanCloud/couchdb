@@ -544,10 +544,8 @@ source_delete_impl(#job{source = #shard{name = Name}, target = Targets}) ->
             LogMsg = "~p : according to configuration not deleting source ~p",
             couch_log:warning(LogMsg, [?MODULE, Name])
     end,
-    % Emit event notifying every listener about the new target shards. This should come
-    % after the `deleted` event has been sent already
     TNames = [TName || #shard{name = TName} <- Targets],
-    lists:foreach(fun(TName) -> couch_event:notify(TName, created) end, TNames).
+    lists:foreach(fun(TName) -> couch_event:notify(TName, updated) end, TNames).
 
 
 completed(#job{} = Job) ->
