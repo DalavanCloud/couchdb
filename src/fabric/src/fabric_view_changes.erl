@@ -596,8 +596,8 @@ find_split_shard_replacements(DeadWorkers, Shards) ->
     {fabric_dict:from_list(Workers), Available}.
 
 
-make_split_seq({Num, _UuidPrefix, Node}, RepCount) when RepCount > 1 ->
-    {Num, split, Node};
+make_split_seq({Num, Uuid, Node}, RepCount) when RepCount > 1 ->
+    {Num, {split, Uuid}, Node};
 make_split_seq(Seq, _) ->
     Seq.
 
