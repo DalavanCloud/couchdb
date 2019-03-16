@@ -12,7 +12,6 @@
 
 -module(fabric_view).
 
-
 -export([is_progress_possible/1, remove_overlapping_shards/2, maybe_send_row/1,
     transform_row/1, keydict/1, extract_view/4, get_shards/2,
     check_down_shards/2, handle_worker_exit/3,
@@ -23,7 +22,6 @@
 -include_lib("mem3/include/mem3.hrl").
 -include_lib("couch/include/couch_db.hrl").
 -include_lib("couch_mrview/include/couch_mrview.hrl").
-
 
 %% @doc Check if a downed node affects any of our workers
 -spec check_down_shards(#collector{}, node()) ->
@@ -74,12 +72,12 @@ filter_possible_overlaps(Shard, Counters, RemoveCb) ->
     {MinB, MaxE} = {lists:min(Bs), lists:max(Es)},
     % Use a custom sort function which prioritizes the given shard
     % range when the start endpoints match.
-    SortFun  = fun
+    SortFun = fun
         ({B, E}, {B, _}) when {B, E} =:= {BShard, EShard} ->
             % If start matches with the shard's start, shard always wins
             true;
         ({B, _}, {B, E}) when {B, E} =:= {BShard, EShard} ->
-            % If start matches with te shard's start, shard always wins
+            % If start matches with the shard's start, shard always wins
             false;
         ({B, E1}, {B, E2}) ->
             % If start matches, pick the longest range first
@@ -418,27 +416,26 @@ fix_skip_and_limit(#mrargs{} = Args) ->
 remove_finalizer(Args) ->
     couch_mrview_util:set_extra(Args, finalizer, null).
 
-% Unit tests
-
+% unit test
 is_progress_possible_test() ->
-    T1 = [[0, ?RING_END]],
-    ?assertEqual(is_progress_possible(mk_cnts(T1)), true),
-    T2 = [[0, 10], [11, 20], [21, ?RING_END]],
-    ?assertEqual(is_progress_possible(mk_cnts(T2)), true),
+    EndPoint = 2 bsl 31,
+    T1 = [[0, EndPoint-1]],
+    ?assertEqual(is_progress_possible(mk_cnts(T1)),true),
+    T2 = [[0,10],[11,20],[21,EndPoint-1]],
+    ?assertEqual(is_progress_possible(mk_cnts(T2)),true),
     % gap
-    T3 = [[0, 10], [12, ?RING_END]],
-    ?assertEqual(is_progress_possible(mk_cnts(T3)), false),
+    T3 = [[0,10],[12,EndPoint-1]],
+    ?assertEqual(is_progress_possible(mk_cnts(T3)),false),
     % outside range
-    T4 = [[1, 10], [11, 20], [21, ?RING_END]],
-    ?assertEqual(is_progress_possible(mk_cnts(T4)), false),
+    T4 = [[1,10],[11,20],[21,EndPoint-1]],
+    ?assertEqual(is_progress_possible(mk_cnts(T4)),false),
     % outside range
-    T5 = [[0, 10], [11, 20], [21, ?RING_END + 1]],
-    ?assertEqual(is_progress_possible(mk_cnts(T5)), false),
-    % possible progress but with backtracking
-    T6 = [[0, 10], [11, 20], [0, 5], [6, 21], [21, ?RING_END]],
+    T5 = [[0,10],[11,20],[21,EndPoint]],
+    ?assertEqual(is_progress_possible(mk_cnts(T5)),false),
+    T6 = [[0, 10], [11, 20], [0, 5], [6, 21], [21, EndPoint - 1]],
     ?assertEqual(is_progress_possible(mk_cnts(T6)), true),
     % not possible, overlap is not exact
-    T7 = [[0, 10], [13, 20], [21, ?RING_END], [9, 12]],
+    T7 = [[0, 10], [13, 20], [21, EndPoint - 1], [9, 12]],
     ?assertEqual(is_progress_possible(mk_cnts(T7)), false).
 
 
@@ -475,8 +472,8 @@ get_shard_replacements_test() ->
         {"n3", 0, 10}, {"n3", 11, 20}
     ]],
     Res = lists:sort(get_shard_replacements_int(Unused, Used)),
-    % Notice that [0, 10] range can be replaces by spawning the
-    % [0, 4] and [5, 10] workers on n1
+    % Notice that [0, 10] range can be replaced by spawning the [0, 4] and [5,
+    % 10] workers on n1
     Expect = [
         {[0, 10], [mk_shard("n2", [0, 4]), mk_shard("n2", [5, 10])]},
         {[11, 20], [mk_shard("n1", [11, 20]), mk_shard("n2", [11, 20])]},
@@ -512,4 +509,4 @@ mk_shard([B, E]) when is_integer(B), is_integer(E) ->
 mk_shard(Name, Range) ->
     Node = list_to_atom(Name),
     BName = list_to_binary(Name),
-    #shard{name=BName, node=Node, range=Range}.
+    #shard{name = BName, node = Node, range = Range}.

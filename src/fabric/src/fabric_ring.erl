@@ -376,7 +376,7 @@ handle_response_incomplete_ring_test() ->
     ?assertEqual({stop, [{Shard1, 42}, {Shard2, 43}]}, Result2).
 
 
-handle_response_test_multiple_copies_test() ->
+handle_response_multiple_copies_test() ->
     Shard1 = mk_shard("n1", [0, 1]),
     Shard2 = mk_shard("n2", [0, 1]),
     Shard3 = mk_shard("n1", [2, ?RING_END]),
@@ -398,7 +398,7 @@ handle_response_test_multiple_copies_test() ->
     ?assertEqual({stop, [{Shard1, 42}, {Shard3, 44}]}, Result3).
 
 
-handle_response_test_backtracking_test() ->
+handle_response_backtracking_test() ->
     Shard1 = mk_shard("n1", [0, 5]),
     Shard2 = mk_shard("n1", [10, ?RING_END]),
     Shard3 = mk_shard("n2", [2, ?RING_END]),
@@ -422,7 +422,7 @@ handle_response_test_backtracking_test() ->
     ?assertEqual({stop, [{Shard3, 44}, {Shard4, 45}]}, Result4).
 
 
-handle_response_test_ring_opts_test() ->
+handle_response_ring_opts_test() ->
     Shard1 = mk_shard("n1", [0, 5]),
     Shard2 = mk_shard("n2", [0, 1]),
     Shard3 = mk_shard("n3", [0, 1]),
@@ -516,4 +516,4 @@ mk_shard([B, E]) when is_integer(B), is_integer(E) ->
 mk_shard(Name, Range) ->
     Node = list_to_atom(Name),
     BName = list_to_binary(Name),
-    #shard{name=BName, node=Node, range=Range}.
+    #shard{name = BName, node = Node, range = Range}.
