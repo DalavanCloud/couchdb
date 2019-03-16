@@ -74,7 +74,7 @@ should_split_shard({Desc, TotalDocs, Q}, DbName) ->
         maps:map(fun(Range, Name) ->
             {ok, Db} = couch_db:open_int(Name, []),
             FilePath = couch_db:get_filepath(Db),
-            %% target is actually exist
+            %% target actually exists
             ?assertMatch({ok, _}, file:read_file_info(FilePath)),
             %% target's update seq is the same as source's update seq
             USeq = couch_db:get_update_seq(Db),
@@ -284,13 +284,17 @@ create_docs(DbName, DocNum) ->
 
 
 create_doc(I) ->
-    Id = iolist_to_binary(io_lib:format("~3..0B", [I])),
-    couch_doc:from_json_obj({[{<<"_id">>, Id}, {<<"value">>, I}]}).
+    create_prefix_id_doc(I, "").
 
 
 create_local_doc(I) ->
-    Id = iolist_to_binary(io_lib:format("_local/~3..0B", [I])),
+    create_prefix_id_doc(I, "_local/").
+
+
+create_prefix_id_doc(I, Prefix) ->
+    Id = iolist_to_binary(io_lib:format(Prefix ++ "~3..0B", [I])),
     couch_doc:from_json_obj({[{<<"_id">>, Id}, {<<"value">>, I}]}).
+
 
 docid_to_integer(<<"_local/", DocId/binary>>) ->
     docid_to_integer(DocId);
