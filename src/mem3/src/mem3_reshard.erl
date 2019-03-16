@@ -240,8 +240,7 @@ terminate(Reason, State) ->
     couch_log:notice("~p terminate ~p ~p", [?MODULE, Reason, statefmt(State)]),
     catch unlink(State#state.db_monitor),
     catch exit(State#state.db_monitor, kill),
-    [kill_job_int(Job) || Job <- running_jobs()],
-    ok.
+    lists:foreach(fun(Job) -> kill_job_int(Job) end, running_jobs()).
 
 
 handle_call(start, _From, #state{state = stopped} = State) ->
@@ -265,7 +264,7 @@ handle_call({stop, Reason}, _From, #state{state = running} = State) ->
         state_info = info_update(reason, Reason, State#state.state_info)
     },
     ok = mem3_reshard_store:store_state(State1),
-    [temporarily_stop_job(Job) || Job <- running_jobs()],
+    lists:foreach(fun(Job) -> temporarily_stop_job(Job) end, running_jobs()),
     {reply, ok, State1};
 
 handle_call({stop, _}, _From, State) ->
@@ -437,15 +436,15 @@ handle_start_job(#job{} = Job, #state{state = running} = State) ->
 
 handle_start_job(#job{} = Job, #state{state = stopped} = State) ->
     ok = mem3_reshard_store:store_job(State, Job),
-    % Since resharding is stop cluster-wide, job is
-    % temporarily marked as stopped in the ets table so as not
-    % to return a "running" result which would look odd.
+    % Since resharding is stopped on this node, the job is temporarily marked
+    % as stopped in the ets table so as not to return a "running" result which
+    % would look odd.
     temporarily_stop_job(Job),
     {reply, {ok, Job#job.id}, State}.
 
 
 % Insert job in the ets table as a temporarily stopped job. This would happen
-% then job is reloaded or added when cluster-wide resharding is stopped.
+% when a job is reloaded or added when node-wide resharding is stopped.
 -spec temporarily_stop_job(#job{}) -> #job{}.
 temporarily_stop_job(Job) ->
     Job1 = kill_job_int(Job),
@@ -646,7 +645,7 @@ job_by_id(Id) ->
     case ets:lookup(?MODULE, Id) of
         [] ->
             not_found;
-        [#job{}=Job] ->
+        [#job{} = Job] ->
             Job
     end.
 
@@ -656,7 +655,7 @@ job_by_pid(Pid) when is_pid(Pid) ->
     case ets:match_object(?MODULE, #job{pid=Pid, _='_'}) of
         [] ->
             {error, not_found};
-        [#job{}=Job] ->
+        [#job{} = Job] ->
             {ok, Job}
     end.
 
