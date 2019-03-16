@@ -163,7 +163,7 @@ split(SourceDb, Partitioned, Engine, Targets0, PickFun, {M, F, A} = HashFun) ->
 
 cleanup_targets(#{} = Targets, Engine) ->
     maps:map(fun(_, #target{db = Db} = T) ->
-        stop_target_db(Db),
+        ok = stop_target_db(Db),
         delete_target(couch_db:name(Db), Engine),
         T
     end, Targets).
@@ -393,6 +393,8 @@ revtree_cb({Pos, RevId}, Leaf, leaf, Acc) ->
     Doc2 = Doc1#doc{atts = Atts},
     Doc3 = couch_db_engine:serialize_doc(TargetDb, Doc2),
     {ok, Doc4, Active} = couch_db_engine:write_doc_body(TargetDb, Doc3),
+    % element(3,...) and (4,...) are the stream pointer and size respecitively
+    % (see couch_att.erl) They are numeric for compatibility with older formats
     AttSizes = [{element(3, A), element(4, A)} || A <- Atts],
     NewLeaf = Leaf#leaf{
         ptr = Doc4#doc.body,
@@ -455,7 +457,7 @@ total_sizes(#racc{active = Active, external = External, atts = Atts}) ->
 
 
 get_max_buffer_size() ->
-    config:get_integer("shard_splitting", "buffer_size", ?DEFAULT_BUFFER_SIZE).
+    config:get_integer("reshard", "split_buffer_size", ?DEFAULT_BUFFER_SIZE).
 
 
 copy_local_docs(#state{source_db = Db, targets = Targets} = State) ->
