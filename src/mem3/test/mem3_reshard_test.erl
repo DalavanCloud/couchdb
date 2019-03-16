@@ -367,7 +367,7 @@ couch_events_are_emitted(#{db1 := Db}) ->
         end,
         Events = Flush([]),
         StartAtDeleted = lists:dropwhile(fun(E) -> E =/= deleted end, Events),
-        ?assertMatch([deleted, updated, updated | _], StartAtDeleted),
+        ?assertMatch([deleted, deleted, updated, updated | _], StartAtDeleted),
         couch_event:unregister(self())
     end).
 

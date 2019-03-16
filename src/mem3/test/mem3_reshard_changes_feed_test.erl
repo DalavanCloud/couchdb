@@ -57,8 +57,8 @@ mem3_reshard_changes_feed_test_() ->
                 foreach,
                 fun setup/0, fun teardown/1,
                 [
-                    fun normal_feed_should_work_after_split/1
-                    %fun continuous_feed_should_work_during_split/1
+                    fun normal_feed_should_work_after_split/1,
+                    fun continuous_feed_should_work_during_split/1
                 ]
             }
         }
@@ -154,7 +154,7 @@ continuous_feed_should_work_during_split(#{db1 := Db}) ->
             Updater = fun U({State, I}) ->
                 receive
                     {get_state, {Pid, Ref}} ->
-                        Pid ! {state, Ref, State},
+                        Pid ! {state, Ref, {State, I}},
                         U({State, I});
                     add ->
                         DocSpec = #{docs => [I, I]},
@@ -178,46 +178,52 @@ continuous_feed_should_work_during_split(#{db1 := Db}) ->
             (waiting_for_updates, Acc) ->
                 Ref = make_ref(),
                 UpdaterPid ! {get_state, {self(), Ref}},
-                receive {state, Ref, State} -> ok end,
+                receive {state, Ref, {State, _}} -> ok end,
                 case {State, length(Acc)} of
                     {"before", N} when N < 5 ->
-                        UpdaterPid ! add;
+                        UpdaterPid ! add,
+                        {ok, Acc};
                     {"before", _} ->
-                        UpdaterPid ! split;
+                        UpdaterPid ! split,
+                        {ok, Acc};
                     {"in_process", N} when N < 10 ->
-                        UpdaterPid ! add;
+                        UpdaterPid ! add,
+                        {ok, Acc};
                     {"in_process", _} ->
-                        wait;
-                    {"after", N} when N < 15 ->
-                        UpdaterPid ! add;
+                        {ok, Acc};
                     {"after", _} ->
-                        UpdaterPid ! stop,
-                        %% nfc why simple return of {stop, Acc} doesn't work
-                        exit({with_proc_res, {ok, Acc}})
-                end,
-                {ok, Acc};
+                        {stop, Acc}
+                end;
             (timeout, Acc) ->
                 {ok, Acc};
             ({change, {Change}}, Acc) ->
                 CM = maps:from_list(Change),
                 {ok, [CM | Acc]};
-            ({stop, EndSeq, _Pending}, _Acc) ->
-                UpdaterPid ! stop,
-                Error = {assertion_fail, [
-                    {module, ?MODULE},
-                    {line, ?LINE},
-                    {value, {last_seq, EndSeq}},
-                    {reason, "Changes feed stopped on shard split"}
-                ]},
-                exit({with_proc_res, {error, Error}})
+            ({stop, EndSeq, _Pending}, Acc) ->
+                % Notice updater is still running
+                {stop, EndSeq, Acc}
         end,
+
         BaseArgs = #changes_args{
             feed = "continuous",
             heartbeat = 100,
             timeout = 1000
         },
-        Result = get_changes_feed(Db, BaseArgs, Callback),
+        StopResult = get_changes_feed(Db, BaseArgs, Callback),
 
+        % Changes feed stopped when source shard was deleted
+        ?assertMatch({stop, _, _}, StopResult),
+        {stop, StopEndSeq, StopChanges} = StopResult,
+
+        % Add 5 extra docs to the db right after changes feed was stopped
+        [UpdaterPid ! add || _ <- lists:seq(1, 5)],
+
+        % The the number of documents that updater had added
+        Ref = make_ref(),
+        UpdaterPid ! {get_state, {self(), Ref}},
+        DocCount = receive {state, Ref, {_, I}} -> I - 1 end,
+
+        UpdaterPid ! stop,
         receive
             {'DOWN', UpdaterRef, process, UpdaterPid, normal} ->
                 ok;
@@ -229,13 +235,11 @@ continuous_feed_should_work_during_split(#{db1 := Db}) ->
                     {reason, "Updater died"}]})
         end,
 
-        case Result of
-            {ok, Changes} ->
-                Expected = [#{id => ID} || #doc{id = ID} <- docs([1, 15])],
-                ?assertChanges(Expected, Changes);
-            {error, Err} ->
-                erlang:error(Err)
-        end
+        AfterArgs = #changes_args{feed = "normal", since = StopEndSeq},
+        {ok, AfterChanges, _} = get_changes_feed(Db, AfterArgs),
+        DocIDs = [Id || #{id := Id} <- StopChanges ++ AfterChanges],
+        ExpectedDocIDs = [doc_id(<<>>, N) || N <- lists:seq(1, DocCount)],
+        ?assertEqual(ExpectedDocIDs, lists:usort(DocIDs))
     end).
 
 
@@ -262,6 +266,7 @@ wait_state(JobId, State) ->
 
 get_changes_feed(Db, Args) ->
     get_changes_feed(Db, Args, fun changes_callback/2).
+
 
 get_changes_feed(Db, Args, Callback) ->
     with_proc(fun() ->
@@ -316,15 +321,11 @@ with_proc(Fun, GroupLeader, Timeout) ->
         erlang:demonitor(Ref, [flush]),
         exit(Pid, kill),
         error({with_proc_timeout, Fun, Timeout})
-   end.
+    end.
 
 
 add_test_docs(DbName, #{} = DocSpec) ->
-    Docs = docs(maps:get(docs, DocSpec, []))
-        ++ ddocs(mrview, maps:get(mrview, DocSpec, []))
-        ++ ddocs(search, maps:get(search, DocSpec, []))
-        ++ ddocs(geo, maps:get(geo, DocSpec, []))
-        ++ ldocs(maps:get(local, DocSpec, [])),
+    Docs = docs(maps:get(docs, DocSpec, [])),
     Res = update_docs(DbName, Docs),
     Docs1 = lists:map(fun({Doc, {ok, {RevPos, Rev}}}) ->
         Doc#doc{revs = {RevPos, [Rev]}}
@@ -363,23 +364,8 @@ docs(_) ->
     [].
 
 
-ddocs(Type, [S, E]) when E >= S ->
-    Body = ddprop(Type),
-    BType = atom_to_binary(Type, utf8),
-    [doc(<<"_design/", BType/binary>>, I, Body, 0) || I <- lists:seq(S, E)];
-ddocs(_, _) ->
-    [].
-
-
-ldocs([S, E]) when E >= S ->
-    [doc(<<"_local/">>, I, bodyprops(), 0) || I <- lists:seq(S, E)];
-ldocs(_) ->
-    [].
-
-
-
 doc(Pref, Id) ->
-    Body = bodyprops(),
+    Body = [{<<"a">>, <<"b">>}],
     doc(Pref, Id, Body, 42).
 
 
@@ -394,44 +380,6 @@ doc(Pref, Id, BodyProps, AttSize) ->
 doc_id(Pref, Id) ->
     IdBin = iolist_to_binary(io_lib:format("~5..0B", [Id])),
     <<Pref/binary, IdBin/binary>>.
-
-
-ddprop(mrview) ->
-    [
-        {<<"views">>, {[
-             {<<"v1">>, {[
-                 {<<"map">>, <<"function(d){emit(d);}">>}
-             ]}}
-        ]}}
-    ];
-
-ddprop(geo) ->
-    [
-        {<<"st_indexes">>, {[
-            {<<"area">>, {[
-                {<<"analyzer">>, <<"standard">>},
-                {<<"index">>, <<"function(d){if(d.g){st_index(d.g)}}">> }
-            ]}}
-        ]}}
-    ];
-
-ddprop(search) ->
-    [
-        {<<"indexes">>, {[
-            {<<"types">>, {[
-                {<<"index">>, <<"function(d){if(d.g){st_index(d.g.type)}}">>}
-            ]}}
-        ]}}
-   ].
-
-
-bodyprops() ->
-    [
-        {<<"g">>, {[
-            {<<"type">>, <<"Polygon">>},
-            {<<"coordinates">>, [[[-71.0, 48.4], [-70.0, 48.4], [-71.0, 48.4]]]}
-        ]}}
-   ].
 
 
 atts(0) ->
