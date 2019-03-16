@@ -21,6 +21,7 @@
     make_purge_id/2,
     verify_purge_checkpoint/2,
     find_source_seq/4,
+    find_split_target_seq/4,
     local_id_hash/1
 ]).
 
@@ -238,6 +239,24 @@ find_source_seq_int(#doc{body={Props}}, SrcNode0, TgtNode0, TgtUUID, TgtSeq) ->
                 "src_node: ~p, tgt_node: ~p, tgt_uuid: ~p, tgt_seq: ~p, "
                 "src_history: ~p",
                 [?MODULE, SrcNode, TgtNode, TgtUUID, TgtSeq, SrcHistory]),
+            0
+    end.
+
+
+find_split_target_seq(TgtDb, SrcNode0, SrcUUIDPrefix, SrcSeq) ->
+    SrcNode = case is_atom(SrcNode0) of
+        true -> atom_to_binary(SrcNode0, utf8);
+        false -> SrcNode0
+    end,
+    case find_split_target_seq_int(TgtDb, SrcNode, SrcUUIDPrefix) of
+        {ok, Seq} when is_integer(Seq), Seq < SrcSeq ->
+            Seq;
+        {ok, Seq} when is_integer(Seq), Seq >= SrcSeq ->
+            SrcSeq;
+        {not_found, _} ->
+            couch_log:warning("~p find_split_target_seq target seq not found "
+                "tgt_db: ~p, src_uuid_prefix: ~p, src_seq: ~p",
+                [?MODULE, couch_db:name(TgtDb), SrcUUIDPrefix, SrcSeq]),
             0
     end.
 
@@ -589,6 +608,51 @@ find_repl_doc(SrcDb, TgtUUIDPrefix) ->
         Else ->
             couch_log:error("Error finding replication doc: ~w", [Else]),
             {not_found, missing}
+    end.
+
+
+find_split_target_seq_int(TgtDb, Node, SrcUUIDPrefix) ->
+    TgtUUID = couch_db:get_uuid(TgtDb),
+    FoldFun = fun(#doc{body = {Props}}, _) ->
+        DocTgtUUID = couch_util:get_value(<<"target_uuid">>, Props, <<>>),
+        case TgtUUID == DocTgtUUID of
+            true ->
+                {History} = couch_util:get_value(<<"history">>, Props, {[]}),
+                SrcHistory = couch_util:get_value(Node, History, []),
+                case get_target_seq(SrcHistory, TgtUUID, Node, SrcUUIDPrefix) of
+                    not_found ->
+                        {ok, not_found};
+                    Seq when is_integer(Seq) ->
+                        {stop, Seq}
+                end;
+            false ->
+                {ok, not_found}
+        end
+    end,
+    Options = [{start_key, <<"_local/shard-sync-">>}],
+    case couch_db:fold_local_docs(TgtDb, FoldFun, not_found, Options) of
+        {ok, Seq} when is_integer(Seq) ->
+            {ok, Seq};
+        {ok, not_found} ->
+            {not_found, missing};
+        Else ->
+            couch_log:error("Error finding replication doc: ~w", [Else]),
+            {not_found, missing}
+    end.
+
+
+get_target_seq([], _TgtUUID, _Node, _SrcUUIDPrefix) ->
+    not_found;
+
+get_target_seq([{Entry} | SrcHistory], TgtUUID, Node, SrcUUIDPrefix) ->
+    SameTgt = couch_util:get_value(<<"target_uuid">>, Entry) =:= TgtUUID,
+    SameNode = couch_util:get_value(<<"target_node">>, Entry) =:= Node,
+    SrcUUID = couch_util:get_value(<<"source_uuid">>, Entry),
+    case SameTgt andalso SameNode andalso is_prefix(SrcUUIDPrefix, SrcUUID) of
+        true ->
+            couch_util:get_value(<<"target_seq">>, Entry);
+        false ->
+            get_target_seq(SrcHistory, TgtUUID, Node, SrcUUIDPrefix)
     end.
 
 
