@@ -16,8 +16,6 @@
 -include_lib("triq/include/triq.hrl").
 -triq(eunit).
 
--compile(export_all).
-
 
 % Properties
 
