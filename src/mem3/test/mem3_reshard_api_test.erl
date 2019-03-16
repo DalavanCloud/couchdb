@@ -90,7 +90,6 @@ mem3_reshard_api_test_() ->
                     fun handle_db_deletion_in_build_indices/1,
                     fun handle_db_deletion_in_update_shard_map/1,
                     fun handle_db_deletion_in_wait_source_close/1,
-                    fun handle_db_deletion_in_topoff3/1,
                     fun recover_in_initial_copy/1,
                     fun recover_in_topoff1/1,
                     fun recover_in_copy_local_docs/1,
@@ -579,13 +578,6 @@ handle_db_deletion_in_update_shard_map({Top, {Db1, _, _}}) ->
 handle_db_deletion_in_wait_source_close({Top, {Db1, _, _}}) ->
     ?_test(begin
         JobId = delete_source_in_state(Top, Db1, wait_source_close),
-        wait_state(Top ++ ?JOBS ++ ?b2l(JobId) ++ "/state", <<"failed">>)
-    end).
-
-
-handle_db_deletion_in_topoff3({Top, {Db1, _, _}}) ->
-    ?_test(begin
-        JobId = delete_source_in_state(Top, Db1, topoff3),
         wait_state(Top ++ ?JOBS ++ ?b2l(JobId) ++ "/state", <<"failed">>)
     end).
 
