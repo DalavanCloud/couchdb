@@ -692,7 +692,7 @@ sync_security(#shard{} = Source, #{} = Targets) ->
 
 targets_map(#shard{name = <<"shards/", _/binary>> = SrcName} = Src,
         #shard{name = <<"shards/", _/binary>>, node = TgtNode}) ->
-    % Parse range from name in case the passed shard is build with a name only
+    % Parse range from name in case the passed shard is built with a name only
     SrcRange = mem3:range(SrcName),
     Shards0 = mem3:shards(mem3:dbname(SrcName)),
     Shards1 = [S || S <- Shards0, not shard_eq(S, Src)],
