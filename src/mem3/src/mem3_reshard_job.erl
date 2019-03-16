@@ -480,7 +480,8 @@ update_shardmap(#job{} = Job) ->
     report(Job#job{workers = [Pid]}).
 
 
-wait_source_close(#job{} = Job) ->
+wait_source_close(#job{source = #shard{name = Name}} = Job) ->
+    couch_event:notify(Name, deleted),
     Pid = spawn_link(?MODULE, wait_source_close_impl, [Job]),
     report(Job#job{workers = [Pid]}).
 
@@ -539,7 +540,11 @@ source_delete_impl(#job{source = #shard{name = Name}, target = Targets}) ->
                         [?MODULE, Name])
             end;
         false ->
-            % Emit deleted event even when not actually deleting the files
+            % Emit deleted event even when not actually deleting the files this
+            % is the second one emitted, the other one was before
+            % wait_source_close. They should be idempotent. This one is just to
+            % match the one that couch_server would emit had the config not
+            % been set
             couch_event:notify(Name, deleted),
             LogMsg = "~p : according to configuration not deleting source ~p",
             couch_log:warning(LogMsg, [?MODULE, Name])
